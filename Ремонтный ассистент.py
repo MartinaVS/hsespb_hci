@@ -75,6 +75,7 @@ class Prod_store(BaseModel):
         primary_key = CompositeKey('prod_id', 'store_id')
 
 class Product_list(BaseModel):
+    # в Product_list нельзя сделать композитный ключ, потому что на композитный ключ нельзя ссылаться, а product_in_list ссылается
     product_list_id = AutoField()
     store_id = ForeignKeyField(Store)
     user_id = ForeignKeyField(User)
@@ -89,6 +90,9 @@ class Product_list(BaseModel):
 class Product_in_list(BaseModel):
     product_list_id = ForeignKeyField(Product_list)
     prod_id = ForeignKeyField(Product)
+    count = DecimalField()
+    cost = FloatField()
+    availability = BooleanField()
     
     class Meta:
         db = db
@@ -99,6 +103,7 @@ class Notification(BaseModel):
     user = ForeignKeyField(User)
     notify_type = TextField()
     text = TextField()
+    smtp = ForeignKeyField(User)
     
     class Meta:
         db = db
@@ -106,7 +111,8 @@ class Notification(BaseModel):
 class Compare_list(BaseModel):
     compare_list_id = AutoField()
     category_id = ForeignKeyField(Category)
-    
+    user_id = ForeignKeyField(User)
+                              
     class Meta:
         db = db
         
@@ -161,9 +167,15 @@ def find_product(searchfield, price, spec_ids_list, spec_list):
         product = Product.select().where(Product.prod_id == prod)[0]
         show_product(product)
 
-def add_product(user_id, product_id, store_id):
+def add_product(user_id, product_id, store_id, count):
     list_exist = Product_list.select().where((Product_list.store_id == store_id) & (Product_list.user_id == user_id))[0]
     price = Prod_store.select(Prod_store.price).where((Prod_store.prod_id == product_id) & (Prod_store.store_id == store_id))
+    available = Prod_store.select(Prod_store.available).where((Prod_store.prod_id == product_id) & (Prod_store.store_id == store_id))
+    price = price * count
+    if available >= count:
+        availability = True
+    else:
+        availability = False
     if not list_exist or list_exist == 0:
         prod_list = Product_list.create(
             user_id = user_id,
@@ -174,14 +186,20 @@ def add_product(user_id, product_id, store_id):
         )
         Product_in_list.create(
             product_list_id = prod_list.product_list_id,
-            prod_id = product_id
+            prod_id = product_id,
+            count = count,
+            cost = price,
+            availability = availability
         )
     else:
         new_total_sum = list_exist.total_sum + price
         Product_list.update({Product_list.total_sum: new_total_sum}).where((Product_list.store_id == store_id) & (Product_list.user_id == user_id))
         Product_in_list.create(
             product_list_id = list_exist.product_list_id,
-            prod_id = product_id
+            prod_id = product_id,
+            count = count,
+            cost = price,
+            availability = availability
         )
         
 def compare_full(product_list):
@@ -294,5 +312,4 @@ compare(Compare_list.select().where(Compare_list.compare_list_id == compare_list
 ### Здесь использованы значения:
 #Категории товаров: 0 - кафель, 1 - обои, 2 - ламинат, 3 - душевая кабина
 #Магазины: 0 - Леруа мерлен, 1 - Максидом
-
 
